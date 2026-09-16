@@ -1,0 +1,6 @@
+id=wifi_pktcap
+name=WiFi Packet Capture Mode
+version=1.0
+versionCode=1
+author=h8
+description=Enables qcacld packet_capture_mode=3 (mgmt+data monitor RX) via WCNSS ini overlay
