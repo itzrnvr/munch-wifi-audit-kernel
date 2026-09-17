@@ -241,3 +241,82 @@ WiFi injection tool. Runs via the Kali chroot's dynamic loader + libs:
 - [LineageOS](https://github.com/LineageOS/android_kernel_xiaomi_sm8250) — modern erofs backport (4.19.318)
 - [MiCode](https://github.com/MiCode/Xiaomi_Kernel_OpenSource) — munch-s-oss kernel source (reference)
 - [ZerBea](https://github.com/ZerBea/hcxdumptool) — hcxdumptool (capture tool reference)
+
+---
+
+# The Display Fix (2026-09-17): MIUI Display Driver Port
+
+## Symptom
+
+After the first boot of the original kernel the panel showed **backlight
+but no UI**. After the first screen-off the DSI command engine corrupted
+(`dsi_display_cmd_engine_enable rc=-22`, thousands of `Command transfer
+failed`) and the Qualcomm HWC entered an endless `DisplayPowerReset` loop,
+cycling the screen every ~9 s forever.
+
+## Root Cause
+
+The sandboXimi tree (`oni-1.0-staging`) ships the **AOSP display
+drivers**. HyperOS's display HAL expects the **MIUI variant** of the
+techpack/display stack plus MIUI-specific core-DRM hooks. With the AOSP
+variant the panel never scans out — a known sm8250 community issue
+(documented in liyafe1997/kernel_xiaomi_sm8250_mod's README: "AOSP版因为
+display驱动不同，在HyperOS/MIUI上屏幕无法正常显示…开机黑屏").
+
+## The Fix
+
+`kernel/display-fix/port_miui_display.sh` ports the MIUI display stack
+from **UtsavBalar1231/kernel_xiaomi_sm8250** (android14-stable) into the
+sandboXimi tree:
+
+| Component | Change |
+|---|---|
+| `techpack/display/` | replaced wholesale (51 files: DSI ctrl/display/panel + MI variants, SDE connector/encoder/kms, PHY) |
+| `drivers/gpu/drm/` | 12 files + `drm_internal_mi.h` — `connector_kdev`, MIUI sysfs (`disp_param`), ioctl master filter, mipi_dsi attach guards. `drm_atomic.c` kept from sandboXimi (carries the devfreq boost, no MIUI content in Utsav's copy) |
+| `include/drm/drm_mipi_dsi.h` | `struct mipi_dsi_device::attached` member |
+| DTS | `dsi-panel-l11r-38-08-0a-dsc-cmd.dtsi` (adds the 90 Hz timing), `kona-sde-display.dtsi`, `kona-sde.dtsi`, `munch-sm8250.dtsi` + 100 panel dtsi includes |
+| build fixes | `pll_trace.h` TRACE_INCLUDE_PATH, `sde_fence.c` `get_unused_fd_flags()` (removed API), focaltech `*.i` firmware stubs |
+
+Rebuild with the same GCC-11/binutils-2.38 toolchain (`build_miui.sh`),
+swap the raw `Image` into a stock-format boot image (`swap_kernel.py`),
+flash to `boot_a` + `boot_b`.
+
+### Result
+
+- Panel binds, HyperOS HAL drives natively (`dsi_panel_set_backlight` in
+  dmesg at boot), `brightness_clone` created by the driver itself
+- **0** DSI command failures, **0** commit timeouts, no HWC recovery loop
+
+## The bl_clone backlight module (`kernel/display-fix/bl_clone.c`)
+
+On the AOSP-driver kernel the backlight kobject's `sysfs_ops` had no
+`store` (every write → EACCES) so nothing — not even root — could set
+brightness. `bl_clone.ko` adds a **bin_attribute** `brightness_clone`
+(bin_attributes carry their own write handler, bypassing the broken
+kobject) and clears the panel gates (`panel_initialized`, `bl_enable`,
+`hbm_51_ctrl_flag`, ESD status mode) before calling
+`backlight_device_set_brightness()`.
+
+The kernel has `CONFIG_MODULE_SIG_FORCE=y` (hidden from `/proc/config.gz`
+but present in the build `.config`), so the module must be signed with
+the build tree's own key:
+
+```sh
+/root/sbx/scripts/sign-file sha512 \
+    /root/sbx/certs/signing_key.pem /root/sbx/certs/signing_key.x509 bl_clone.ko
+```
+
+With the MIUI display port the native path works, so the module is
+mostly a fallback — but `magisk-module/` and `tools/bl_clone_service.sh`
+(installed at `/data/adb/service.d/`, immune to Magisk's module
+bootloop-protection `disable` files) keep a phone bootable even if the
+AOSP tree is accidentally rebuilt.
+
+## Boot script persistence
+
+Magisk's bootloop protection kept auto-disabling the bl_clone *module
+directory* after several crash-reboots. Standalone scripts under
+`/data/adb/service.d/` are unaffected — `tools/bl_clone_service.sh`
+loads the module, pins the screen on (the AOSP driver's panel-disable
+path is what corrupts the DSI cmd engine), and runs a small bridge daemon
+polling Android's `screen_brightness` into `brightness_clone`.

@@ -1,6 +1,6 @@
-id=wifi_pktcap
-name=WiFi Packet Capture Mode
+id=bl_clone
+name=Backlight brightness_clone Bridge
 version=1.0
 versionCode=1
 author=h8
-description=Enables qcacld packet_capture_mode=3 (mgmt+data monitor RX) via WCNSS ini overlay
+description=Creates writable brightness_clone sysfs (bin_attribute) on panel0-backlight + bridge daemon to sync Android brightness to kernel backlight. Fixes black display on sandboXimi AOSP kernel + HyperOS firmware.
