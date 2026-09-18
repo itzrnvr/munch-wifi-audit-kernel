@@ -148,3 +148,26 @@ enabled. PIF v18 + wififix also enabled.
 GATED (needs user go-ahead): flash boot-clean-final.img (boot_a+b) or
 fastboot-boot it first; then reboot -> ReZygisk activates (zygiskd) ->
 PIF works -> Play Integrity / GPay path.
+
+## EXECUTED (2026-09-19 ~02:45): clean flash done — ZYGISM LIVE
+
+User go-ahead given ("Do it"). Sequence executed:
+1. fastboot boot boot-clean-final.img (RAM test) -> BOOTED in 20s:
+   magisk processes = 0, su uid=0, kernel 4.19.157-perf id intact,
+   **zygisk-ptrace64 + zygiskd64/32 RUNNING, zygote64+zygote maps show 6
+   zygisk entries each = injected** — module merged + tracer started at
+   post-fs-data.
+2. fastboot flash boot_a + boot_b boot-clean-final.img -> reboot -> 25s.
+3. Permanent-boot verification: magisk 0, su OK, zygisk procs + 6/6 zygote
+   injection, brightness_clone 536, con_mode 0.
+4. Radio smoke on the clean flash: attack mode -> wlan0 monitor, ch 6 parked,
+   rfhelper 100/100 frames, firmware completions on-air (fc_subtype=0xc0,
+   addr3=a8:6e:84:c8:af:f8 Fabiola BSSID, chanfreq=2437); STA restored.
+5. Sleep/wake on the clean flash: 536 -> 0 -> 337, panel live.
+6. PIF v18: custom.pif.prop populated (Pixel 9 Pro Fold CANARY print,
+   security patch 2026-08-05); GPay (com.google.android.apps.nbu.paisa.user)
+   installed. Zygisk live => PIF spoofs DroidGuard at runtime.
+
+Root stack is now KSU-ONLY (no Magisk anywhere). Rollback chain intact:
+boot-injchan.img (previous proven, dual-root) + boot_backup_20260915.img
+(stock) remain on D:/kernel-build.
