@@ -113,3 +113,38 @@ BSSID with firmware status=OK (tx_chanfreq=2437), STA mode restored,
 sleep/wake brightness 536 -> 0 -> 336 with live panel. See
 ../radio/LIMITATIONS.md for the full matrix. KSU-Next images remain on
 D:/kernel-build (boot-ksunext-*.img) for the next dive.
+
+## ZYGISM PATH UNBLOCKED (2026-09-19, later) — dual-root discovery
+
+Research corrected the earlier "zygisk impossible on KSU 0.9.5" verdict:
+- KSU never had built-in zygisk by design; the standard path is a standalone
+  provider module (ZygiskNext / ReZygisk / NeoZygisk). PIF (osm0sis v18)
+  explicitly supports "KernelSU + ReZygisk/ZygiskNext/NeoZygisk".
+- ReZygisk v1.0.0 requirements: kernel >= 10940 (ours = 11872 OK after the
+  KSU_VERSION fix) + ksud >= 11425 (0.9.5 = OK).
+
+Real blocker found: the flashed boot image was DUAL-ROOT — kernel runs
+KernelSU 0.9.5 but the ramdisk still has magiskinit injected
+(`/debug_ramdisk/magisk` + magiskd PID live, `.backup/.magisk` in ramdisk,
+all three local images: injchan / clean-rd / backup-20260915 are
+Magisk-patched). KSU's module system DID work (modules.img ext4 loop40
+mounted, wififix `KSU /system|/vendor overlay` live — classic ksud 0.9.5
+uses modules.img by design), but the magisk conflict message + ReZygisk's
+"multiple root" check trip on it.
+
+Fix built (staged, NOT flashed): **D:/kernel-build/boot-clean-final.img**
+(sha256 2a3ec836ff9a6a6855ddbce091a74c920a7c476c58c01eaf76141786f2eaeef2)
+= final kernel (Image #44, 4.19.157-perf + KSU 0.9.5 + injchan + bl_clone
+v2) + magiskboot-`cpio restore`-de-magisked stock ramdisk (test=0, /init
+symlink, first_stage_ramdisk intact, kernel sha256 verified identical).
+
+ReZygisk installed: `ksud module install` of the v1.0.0 zip FAILED on
+sepolicy.rule `#` comment lines ("Failed to parse policy statement") —
+KSU 0.9.5's policy parser doesn't skip comments. Fix: strip comment lines +
+regenerate sepolicy.rule.sha256 (plain hex, no newline), rezip
+(rezygisk-fixed.zip), install OK. `ksud module list` now shows rezygisk
+enabled. PIF v18 + wififix also enabled.
+
+GATED (needs user go-ahead): flash boot-clean-final.img (boot_a+b) or
+fastboot-boot it first; then reboot -> ReZygisk activates (zygiskd) ->
+PIF works -> Play Integrity / GPay path.
